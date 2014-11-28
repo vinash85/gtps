@@ -6,3 +6,5 @@ eQTL <- mclapply(iters ,  function(xx) {
 		       return(c(aa$p.value, aa$estimate))
 }, mc.cores=1)
 eqtl <- t(do.call(cbind, eQTL))
+
+
