@@ -2,6 +2,7 @@ cv.glm <- function( formula, family = gaussian, data, weights = NULL,
          start = NULL,  model = TRUE, method = "glm.fit",
          x = FALSE, y = TRUE, contrasts = NULL, nfolds=10, parallel=T)
 {
+  require(glmnet)
   N <- nrow(data)
   foldid=sample(rep(seq(nfolds),length=N))
   predicted <- numeric(N)

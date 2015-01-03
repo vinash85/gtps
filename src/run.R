@@ -1,7 +1,9 @@
 load("/cbcbhomes/vinash85/shortcuts/lasso/data/Data/MikeData/magnet_PedTraits.RData")
 library(data.table)
 require(mi) 
+setkey(pedtrait, sample_name)
 pedtrait.info <- pedtrait[, 1:5,with=F]
+
 expression <- pedtrait[, grep(x=colnames(pedtrait), pattern="^X"), with=F]
 expression.z <- scale(expression, scale=apply(expression, 2, sd), center=T)
 rownames(expression.z)  = pedtrait.info$sample_name

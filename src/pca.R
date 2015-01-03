@@ -46,6 +46,7 @@ ggsave("tdi_lvesd.pdf")
 }
 
 source("~/project/gtps/gtps/src/fisher.score.R")
+library(limma)
 topGene <- topTreat(fit2,coef=2,2000)
 expression.diff.hf  <-  expression.z[, rownames(topGene)]
 gene.weight <- apply(expression.diff.hf ,  2,function(tt) fisher.score(tt, pedtrait.info$disease) )
@@ -80,34 +81,27 @@ p <- ggplot(data=expression.merge, aes(x=Dim.1, y=Dim.2))
 p+geom_point(aes(col=factor(history_of_diabetes.p)))
 ggsave("pca_weighted_hf.pdf")
 
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvef.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvef.p))
-p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) + labs(title=paste0("correlation =",  aa$estimate, "p <", aa$p.value))   
-ggsave("tdi_weighted_lvef.pdf")
+params = c( "lvef.p","lvedd.p","lvesd.p","mitral_regurgitation.p","tricuspid_regurgitation.p","cardiac_index.p","creatinine_level.p") 
 
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvedd.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvedd.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + labs(title=paste0("correlation =",  aa$estimate, "p <", aa$p.value))   
-ggsave("tdi_weighted_lvedd.pdf")
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvesd.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvesd.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + labs(title=paste0("correlation =",  aa$estimate, "p <", aa$p.value)) 
-ggsave("tdi_weighted_lvesd.pdf")
+for(curr.param in params){
+  curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
+#donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
+expression.merge$pdi <- eval(parse(text=paste0("expression.merge$",curr.param)))
+aa <-  cor.test(expression.merge$pdi, expression.merge$tdi, ,method="spearman")
+p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(pdi)))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(y= curr.name, x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "tdi_weighted_",curr.name, ".pdf"))
+}
 
 
-aa <-  cor.test(expression.merge$tdi, expression.merge$cardiac_index.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=cardiac_index.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + labs(title=paste0("correlation =",  aa$estimate, "p <", aa$p.value)) 
-ggsave("tdi_weighted_cardiac_index.pdf")
-
- p <- ggplot(data=expression.merge[!etiology%in%c("Valvular", "Other")], aes(y=tdi, x=factor(history_of_hypertension.p)))
-p+geom_boxplot() + facet_grid(.~ etiology )
+if(F) {
+  p <- ggplot(data=expression.merge[!etiology%in%c("Valvular", "Other")], aes(y=tdi, x=factor(history_of_hypertension.p)))
+  p+geom_boxplot() + facet_grid(.~ etiology )
+}
 
 
-
-
-### with imputataion###
+### with imputation###
 library(missMDA)
 physio.reduced.df <- as.data.frame(physio.subset[,list( age.p, gender.p, race.p,  patient_weight_kg.p, height_cm.p, heart_weight_grams.p, prior_cabg.p,
 				   history_of_afib_aflutter.p, history_of_diabetes.p, history_of_hypertension.p, ace_inhibitor.p, lvedd.p, lvesd.p, lvef.p,
@@ -121,70 +115,22 @@ imp <-  imputePCA(physio.reduced.df, ncp=10)
 physio.imputed  <-  as.data.table(imp$completeObs) 
 physio.imputed$sample_name = physio.subset$sample_name
 physio.imputed$etiology =   physio.subset$etiology
-expression.merge <- merge(x=physio.imputed, y=gene.proj.df, by = "sample_name", sort = F)
+expression.merge <- merge(x=physio.imputed, y=gene.proj.df, by = "sample_name", sort = F, suffixes= c("", ".gene"))
 donor.eigen.gene <- colMeans( expression.merge[disease.p==1, eigen.gene, with=F])
 expression.merge$tdi <- apply(expression.merge[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
 
-p <- ggplot(data=expression.merge, aes(x=Dim.1, y=Dim.2))
-p+geom_point(aes(col=factor(history_of_diabetes.p)))
-ggsave("pca_weighted_hf.pdf")
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvef.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvef.p))
+for(curr.param in params){
+  curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
+#donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
+expression.merge$pdi <- eval(parse(text=paste0("expression.merge$",curr.param)))
+aa <-  cor.test(expression.merge$pdi, expression.merge$tdi, ,method="spearman")
+p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(pdi)))
 p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_lvef.pdf")
-
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvedd.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvedd.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_lvedd.pdf")
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$lvesd.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=lvesd.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_lvesd.pdf")
-
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$cardiac_index.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=cardiac_index.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_cardiac_index.pdf")
-
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$mitral_regurgitation.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=mitral_regurgitation.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_mitral_regurgitation.pdf")
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$tricuspid_regurgitation.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=tricuspid_regurgitation.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_tricuspid_regurgitation.pdf")
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$creatinine_level.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=creatinine_level.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_creatinine_level.pdf")
-
-
-aa <-  cor.test(expression.merge$tdi, expression.merge$patient_weight_kg.p)
-p <- ggplot(data=expression.merge, aes(x=tdi, y=patient_weight_kg.p))
-p+geom_point(aes(col=factor(etiology))) + geom_smooth(method=lm)  + 
-labs(title=paste0("correlation =",  format( aa$estimate, digits=3) , " \n p <", format(aa$p.value, digits=3, scientific=T)))   
-ggsave("tdi_weighted_imputed_patient_weight_kg.pdf")
-
+labs(y= curr.name, x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "tdi_weighted_imputed_",curr.name, ".pdf"))
+}
 
 ####local pdi####
-params = c( "lvef.p","lvedd.p","lvesd.p","mitral_regurgitation.p","tricuspid_regurgitation.p","cardiac_index.p","creatinine_level.p") 
-
 for(curr.param in params){
   curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
 donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
@@ -196,12 +142,18 @@ labs(y="Phenotypic deviation index (Rank) ", x = "Transcriptomic Deviation index
 ggsave(paste0( "tdi_weighted_imputed_",curr.name, "pdi.pdf"))
 }
 
-
-
-
+for(curr.param in params){
+  curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
+donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
+expression.merge$pdi <- apply(expression.merge[,curr.param, with=F], 1 , function(tt) sum((tt - donor.di)^2))
+aa <-  cor.test(expression.merge$pdi, expression.merge$tdi)
+p <- ggplot(data=expression.merge, aes(x=tdi, y=pdi))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(y="Phenotypic deviation index ", x = "Transcriptomic Deviation index",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "tdi_weighted_imputed_",curr.name, ".value.pdi.pdf"))
+}
 
 #### GPDI
-
 
 physio.imputed1 <- physio.imputed[!duplicated(sample_name)]
 physio.imputed.params <-  as.matrix( physio.imputed1[,list( lvedd.p, lvesd.p, lvef.p,
@@ -219,7 +171,7 @@ physio.proj.df$etiology  <-  physio.imputed1$etiology
 physio.proj.df$disease.p <-  physio.imputed1$disease.p
 setkey(physio.proj.df, sample_name)
 setkey(gene.proj.df, sample_name)
-expression.merge <- merge(x=gene.proj.df, y=physio.proj.df, by = "sample_name", sort = F)
+expression.merge <- merge(x=gene.proj.df, y=physio.proj.df, by = "sample_name", sort = F, suffixes== c(".gene", ""))
 #eigen.physio <- paste0(eigen.physio, ".x") 
 curr.name <- "GPDI"
 curr.param <- "gpdi"
@@ -233,6 +185,13 @@ p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(gpdi)))
 p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y="Global phenotypic deviation index (Rank) ", x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
 ggsave(paste0( "tdi_weighted_imputed_",curr.name, "pdi.pdf"))
+
+aa <-  cor.test(expression.merge$gpdi, expression.merge$tdi)
+p <- ggplot(data=expression.merge, aes(x=tdi), y=gpdi))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(y="Global phenotypic deviation index ", x = "Transcriptomic Deviation index ",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "tdi_weighted_imputed_",curr.name, ".value.pdi.pdf"))
+
 
 
 
@@ -257,14 +216,14 @@ snp.select <- aa[1:10000]
 snp.sel.df  <- snp.df[,snp.select]
 
 
-#### impute
+#### impute snp
 imp <-  imputePCA(snp.sel.df , ncp=300)
 snp.imputed <-  as.data.table(imp$completeObs) 
 snp.weight <- apply(snp.imputed ,  2,function(tt) fisher.score(tt, pedtrait.info$disease) )
 pca.snp <- PCA(snp.imputed, col.w=snp.weight, ncp=ncol(snp.imputed), graph=F)
 snp.proj.df <- as.data.table(pca.snp$ind$coord)
 eigen.snp <- colnames(pca.snp$ind$coord)
-snp.proj.df$sample_name  <-  rownames(pca.snp$ind$coord)
+snp.proj.df$sample_name  <-  rownames(snp.sel.df)
 snp.proj.df$disease.p <- pedtrait.info$disease
 donor.eigen.snp <- colMeans( snp.proj.df[disease.p==1, eigen.snp, with=F])
 snp.proj.df$gdi <- apply(snp.proj.df[,eigen.snp, with=F], 1 , function(tt) sum((tt - donor.eigen.snp)^2)) 
@@ -273,7 +232,7 @@ gene.proj.df$disease.p  <- pedtrait.info$disease
 donor.eigen.gene <- colMeans( gene.proj.df[disease.p==1, eigen.gene, with=F])
 gene.proj.df$tdi <- apply(gene.proj.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
 gene.proj.df$gdi <- snp.proj.df$gdi
-expression.merge <- merge(x=physio.imputed, y=gene.proj.df, by = "sample_name", sort = F)
+expression.merge <- merge(x=physio.imputed, y=gene.proj.df, by = "sample_name", sort = F, suffixes = c("", ".gene") )
 
 donor.eigen.physio <- colMeans( physio.proj.df[disease.p==1, eigen.physio, with=F])
 physio.proj.df$gpdi <- apply(physio.proj.df[,eigen.physio, with=F], 1 , function(tt) sum((tt - donor.eigen.physio)^2))
@@ -282,7 +241,7 @@ expression.merge$gpdi <- (physio.proj.df[expression.merge$sample_name])$gpdi
 
 curr.name <- "GDI"
 curr.param <- "gdi"
-aa <-  cor.test(expression.merge$gdi, expression.merge$tdi, ,method="spearman")
+aa <-  cor.test(expression.merge$gdi, expression.merge$tdi, method="spearman")
 p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(gdi)))
 p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y="Genotypic deviation index (Rank) ", x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
@@ -299,8 +258,106 @@ ggsave(paste0( "gpdi_weighted_imputed_",curr.name, "pdi.pdf"))
 
 
 
-
+curr.name <- "GDI"
+curr.param <- "gdi"
+expression.merge.disease <- expression.merge[disease.p==2]
+aa <-  cor.test(expression.merge.disease$gdi, expression.merge.disease$gpdi )
+p <- ggplot(data=expression.merge.disease, aes(x=gdi, y=gpdi))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(x="Genotypic deviation index (Rank) ", y = "Global phenotype Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
 ####local pdi with genetic####
 
+for(curr.param in params){
+  curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
+donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
+expression.merge$pdi <- apply(expression.merge[,curr.param, with=F], 1 , function(tt) sum((tt - donor.di)^2))
+aa <-  cor.test(expression.merge$pdi, expression.merge$tdi, ,method="spearman")
+p <- ggplot(data=expression.merge, aes(x=rank(gdi), y=rank(pdi)))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(x="Genotypic deviation index (Rank) ", y = "Phenotypic deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "gdi_weighted_imputed_",curr.name, "pdi.pdf"))
+}
+
+
+for(curr.param in params){
+  curr.name <- toupper(gsub(curr.param, pattern="\\.p$", replace=""))
+donor.di <- colMeans( expression.merge[disease.p==1, curr.param, with=F])
+expression.merge$pdi <- apply(expression.merge[,curr.param, with=F], 1 , function(tt) sum((tt - donor.di)^2))
+aa <-  cor.test(expression.merge$pdi, expression.merge$tdi)
+p <- ggplot(data=expression.merge, aes(x=gdi, y=pdi))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(x="Genotypic deviation index ", y = "Phenotypic deviation index ",   title=paste0(curr.name , "\n Pearson correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "gdi_weighted_imputed_",curr.name, "value_pdi.pdf"))
+}
+
+
+## independent analysis to check for over-training###
 source("pca_independent.R")
+
+### combining genetic and transcriptomic state-space ###
+exp.snp.merge <- merge(x=gene.proj.df, y=snp.proj.df[,c("sample_name", eigen.snp), with=F], by="sample_name", sort = F, suffixes = c(".gene", ".snp"))
+eigen.gene.m <- paste0(eigen.gene,".gene")
+eigen.snp.m <- paste0(eigen.gene,".snp")
+
+
+
+donor.eigen.snp.gene <- colMeans( exp.snp.merge[disease.p==1, c(eigen.snp.m, eigen.gene.m, eigen.snp.m) , with=F])
+exp.snp.merge$gtdi <- apply(exp.snp.merge[, c(eigen.snp.m, eigen.gene.m, eigen.snp.m), with=F], 1 , function(tt) sum((tt - donor.eigen.snp.gene)^2)) 
+exp.snp.merge <- merge(x=exp.snp.merge, y=physio.proj.df, by="sample_name", sort = F, suffixes = c(".snp.gene", ".p"))
+#exp.snp.merge$gpdi <- (physio.proj.df[exp.snp.merge$sample_name])$gpdi
+#exp.snp.merge$etiology <- (physio.proj.df[exp.snp.merge$sample_name])$etiology
+
+curr.name <- "GTDI"
+curr.param <- "gtdi"
+aa <-  cor.test(exp.snp.merge$gtdi, exp.snp.merge$gpdi)
+p <- ggplot(data=exp.snp.merge, aes(x=rank(gtdi), y=rank(gpdi)))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(x="Genotypic-transcriptomic deviation index (Rank) ", y = "Global phenotype Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "gtdi_weighted_imputed_",curr.name, "pdi.pdf"))
+
+
+
+####  combined state - space ######  
+
+snp.gene <- cbind(expression.diff.hf,snp.imputed)
+snp.gene.weight <- apply(snp.gene ,  2,function(tt) fisher.score(tt, pedtrait.info$disease) )
+pca.snp.gene <- PCA(snp.gene, col.w=snp.gene.weight, ncp=ncol(snp.gene), graph=F)
+snp.gene.proj.df <- as.data.table(pca.snp.gene$ind$coord)
+eigen.snp.gene <- colnames(pca.snp.gene$ind$coord)
+snp.gene.proj.df$sample_name  <-  rownames(snp.sel.df)
+snp.gene.proj.df$disease.p <- pedtrait.info$disease
+donor.eigen.snp.gene <- colMeans( snp.gene.proj.df[disease.p==1, eigen.snp.gene, with=F])
+snp.gene.proj.df$gtdi <- apply(snp.gene.proj.df[,eigen.snp.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.snp.gene)^2)) 
+exp.snp.merge <- merge(x=snp.gene.proj.df, y=physio.proj.df, by="sample_name", sort = F, suffixes = c(".snp.gene", ".p"))
+
+aa <-  cor.test(exp.snp.merge$gtdi, exp.snp.merge$gpdi )
+
+
+#### hierarchical combining
+
+exp.snp.mat <- merge(x=gene.proj.df, y=snp.proj.df[,c("sample_name", eigen.snp), with=F], by="sample_name", sort = F, suffixes = c(".gene", ".snp"))
+eigen.gene.m <- paste0(eigen.gene,".gene")
+eigen.snp.m <- paste0(eigen.gene,".snp")
+exp.snp.gene.pca1 <- as.matrix(exp.snp.mat[,c(eigen.gene.m , eigen.snp.m ), with=F])
+snp.gene.weight <- apply(exp.snp.gene.pca1 ,  2,function(tt) fisher.score(tt, pedtrait.info$disease) )
+pca.snp.gene <- PCA(exp.snp.gene.pca1 , col.w=snp.gene.weight, ncp=ncol(snp.gene), graph=F)
+
+snp.gene.proj.df <- as.data.table(pca.snp.gene$ind$coord)
+eigen.snp.gene <- colnames(pca.snp.gene$ind$coord)
+snp.gene.proj.df$sample_name  <-  rownames(snp.sel.df)
+snp.gene.proj.df$disease.p <- pedtrait.info$disease
+donor.eigen.snp.gene <- colMeans( snp.gene.proj.df[disease.p==1, eigen.snp.gene, with=F])
+snp.gene.proj.df$gtdi <- apply(snp.gene.proj.df[,eigen.snp.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.snp.gene)^2)) 
+exp.snp.merge <- merge(x=snp.gene.proj.df, y=physio.proj.df, by="sample_name", sort = F, suffixes = c(".snp.gene", ".p"))
+
+aa <-  cor.test(exp.snp.merge$gtdi, exp.snp.merge$gpdi )
+
+
+curr.name <- "GTDI"
+curr.param <- "gtdi"
+aa <-  cor.test(exp.snp.merge$gtdi, exp.snp.merge$gpdi)
+p <- ggplot(data=exp.snp.merge, aes(x=rank(gtdi), y=rank(gpdi)))
+p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+labs(x="Genotypic-transcriptomic deviation index (Rank) ", y = "Global phenotype Deviation index (Rank)",   title=paste0(curr.name , "\n Pearson correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
+ggsave(paste0( "gtdi_weighted_imputed_",curr.name, "pdi.pdf"))
 

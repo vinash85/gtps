@@ -396,6 +396,13 @@ yy.pos <- physio.pedtrait$cardiac_index.p[pos.inx]
 dataDir  <- "svm" 
 writeSVMFeature(paste(dataDir,"trainset", sep="/"), neg=xx.neg, pos=xx.pos) 
 
+#heart-failure
+xx.norm <- apply(expression.z,2, function(tt) ((tt -  min(tt))/(max(tt) - min(tt))))
+xx.neg <- xx.norm[as.character(pedtrait$sample_name[pedtrait$disease ==1]), ]
+xx.pos <- xx.norm[as.character(pedtrait$sample_name[pedtrait$disease ==2]), ]
+writeSVMFeature(paste(dataDir,"trainset", sep="/"), neg=xx.neg, pos=xx.pos)
+
+
 
 #imputation 
 
