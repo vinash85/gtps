@@ -60,3 +60,29 @@ for (ii in seq(length(tissues.sub)) ) {
      # temp <- lower.tri(tissues.corr[[i]], diag = FALSE)
      # tissues.corr[[ii]] [ is.na(tissues.corr[[ii]])] < - 0 
 }
+    map = fread("UNIQUE_GENES.txt", header=F)
+    map$V1 = as.character(map$V1)
+    setkey(map, V1)
+for (ii in seq(length(tissues.sub)) ) {
+    stopifnot(FALSE)
+    aa = fread("IMR90_100KB_Gene_Gene.txt")
+    # affy2ensembl1 = data.table(affy2ensembl1)
+    # affy2ensembl = affy2ensembl1[!is.na(entrezgene)]
+    # affy2ensembl[,entrezgene:=as.character(entrezgene)]
+    # setkey(affy2ensembl, entrezgene)
+    # aa$V1hgnc=affy2ensembl[as.character(aa$V1)]$hgnc_symbol
+    tissues.curr = tissues.sub[ii]
+        gtex.curr = t(gtex.mat[,tissues.type == tissues.curr ])
+    tissues.corr = bicor(gtex.curr, nThreads = 8)
+    aa$V1hg = map[as.character(aa$V1)]$V2
+    aa$V2hg = map[as.character(aa$V2)]$V2
+    aa = aa[(V1hg %in% colnames(tissues.corr)) & (V2hg %in% colnames(tissues.corr))]
+    geneInx = data.table(colnames(tissues.corr), 1:nrow(tissues.corr))
+    setkey(geneInx, V1)
+    aa$V1Inx = geneInx[as.character(aa$V1hg)]$V2
+    aa$V2Inx = geneInx[as.character(aa$V2hg)]$V2
+    aa2 = as.matrix(aa[,list(V1Inx, V2Inx)])
+    aa$bicor = tissues.corr[aa2]
+    aa[, bicor:=ifelse(is.na(bicor), 0, bicor )]
+    write.table(file=paste0(tissues.curr,  "pair.txt"), x = aa,row.names=F, col.names=T, quote=F)
+}

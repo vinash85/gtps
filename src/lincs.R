@@ -16,6 +16,7 @@ rid = unlist(lincs.dim$rid)
  # skl is skeletal myocytes.
 # tab.sub = tab[distil_id %in%  lincs$cid]
 tab.mcf7 = tab[cell_id=="MCF7"] 
+# tab.mcf7 = tab[cell_id=="SKL"] 
 tab.mcf7 = tab.mcf7[pert_type %in% c("trt_cp", "ctl_untrt")]
 tab.mcf7 = tab.mcf7[pert_time == 24]			
 
@@ -45,7 +46,7 @@ inx = cid %in% tab.mcf7$distil_id
 setkey(tab.mcf7,distil_id)
 tab.mcf7 = tab.mcf7[cid[inx] ]
 lincs1 = as.matrix(lincs[,which(inx),with=F])
-rm(lincs, lincs.dim)
+# rm(lincs, lincs.dim)
 rownames(lincs1) = rid
 lincs1 = lincs1[affy2ensembl.dt$affy_hg_u133a,]
 exp.trt = lincs1[  , tab.mcf7$pert_type == "trt_cp"]
@@ -66,8 +67,8 @@ qnorm.col <- function(gene.exp.resid)
 exp.trt = qnorm.col(exp.trt)
 exp.untrt = qnorm.col(exp.untrt)
 magnet.exp = qnorm.col(t(expression))
-exp.donor = apply(magnet.exp[,expression.annot$disease.p ==1], 1, mean)
-exp.hf = apply(magnet.exp[,expression.annot$disease.p ==2], 1, mean)
+exp.donor = apply(magnet.exp[,expression.annot$disease.p ==1], 2, mean)
+exp.hf = apply(magnet.exp[,expression.annot$disease.p ==2], 2, mean)
 exp.avg.untrt = rowMeans(exp.untrt[,1:6])
 zero.exp = min(c(exp.donor, exp.hf))
 exp.donor.trt= exp.trt
@@ -113,5 +114,28 @@ eigen.gene <- colnames(pca.gene$ind.sup$coord)
 magnet.gene.df = as.data.table(pca.gene$ind$coord)
 donor.eigen.gene <- colMeans( magnet.gene.df[expression.annot$disease.p==1, eigen.gene, with=F])
 expression.annot$tdi = apply(magnet.gene.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
-tdi <- apply(gene.proj.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
+tdi <- apply(gene.proj.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
+tdi.donor = tdi[1:ncol(exp.donor.trt)]
+tdi.hf =  tdi[-(1:ncol(exp.donor.trt))]
+
+
+
+###### check which cell and ctrl is nearest to heart cell microarray data
+
+tab.mcf7 = tab[pert_type %in% c("ctl_vehicle", "ctl_untrt", "ctl_vector" )]
+
+
+##########cmap ######
+
+library(avinash)
+cmap = fread("~/project/project2-scratch/data/lincs/cmap/rankMatrix.txt")
+library(Biobase)
+library(GEOquery)
+gse32474 <- getGEO('GSE32474', destdir=".")
+expression <- exprs(gse32474$GSE32474_series_matrix.txt.gz)
+pheno <- pData(gse32474$GSE32474_series_matrix.txt.gz)
+
+
+
+
 
