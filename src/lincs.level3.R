@@ -78,7 +78,9 @@ plot( p3, col=rgb(0,1,0,1/4), xlim=c(0,15.1), add=T)
 gse.exp = sklMat.match
 gseConv.exp =  apply(gse.exp, 2, function(tt) mrs(nonreference=tt, reference=exp.median))
 rownames(gseConv.exp) = rownames(expression.match)
-
+aa = colnames(gseConv.exp) 
+bb = gsub(aa, pattern=":", replacement=".")
+colnames(gseConv.exp) = bb
 ### from geo database
 #Download GDS file, put it in the current directory, and load it: viral cardiomyocytes data
 library(Biobase)
@@ -145,8 +147,11 @@ gseConv.exp[,hf.trt2 := hf+del_rep2]
 
 
 
+tab1.skl = tab.skl
+tab1.skl[,distil_id:=gsub(distil_id, pattern=":", replacement=".")]
 
 ####differential analysis
+
 library(limma)
 exp.mat  <- expression.match
 design <- cbind(grp1=1, disease=expression.annot$disease.p) 
@@ -154,33 +159,36 @@ fit  <-  lmFit(exp.mat, design)
 fit2 <- treat(fit,lfc=0.1)
 fit2 <- eBayes(fit2) 
 topGene <- topTreat(fit2,coef=2,2000)
-diff.hf.gene = rownames(topGene)
+diff.hf.gene = topGene$ID
 m = length(diff.hf.gene)
-n = nrow(exp.mat) - n
+n = nrow(exp.mat) - m
 ##### controls
 geneNames = unique(tab.skl[pert_type =="trt_sh"]$pert_desc)
 
-	ctlid = tab.skl[pert_type == "ctl_untrt"]$distil_id
+	ctlid = tab1.skl[pert_type == "ctl_untrt"]$distil_id
 out = matrix(0, nrow=length(geneNames), ncol=3)
 for (gene in seq(length(geneNames))) {
 
-geneName = geneNames[gene]
-
-caseid = tab.skl[pert_desc == geneName ]$distil_id
-exp.mat1  <- gseConv.exp[, c(ctlid, caseid)]
-design <- cbind(grp1=1, pert=c(rep(0, length(ctlid)), rep(1, length(caseid)))) 
-fit  <-  lmFit(exp.mat1, design)
-fit2 <- treat(fit,lfc=0.1)
-fit2 <- eBayes(fit2) 
-topGene1 <- topTreat(fit2,coef=2,p.value=.06)
-diff.gene = rownames(topGene1) 
-x = sum(diff.gene %in% diff.hf.gene)
-k = length(diff.gene)
-p.val = dhyper(x, m , n, k)
-out[gene,] = c(x, k, p.val)
-print(geneName)
+	geneName = geneNames[gene]
+	caseid = tab1.skl[pert_desc == geneName ]$distil_id
+	exp.mat1  <- gseConv.exp[, c(ctlid, caseid)]
+	design <- cbind(grp1=1, pert=c(rep(0, length(ctlid)), rep(1, length(caseid)))) 
+	fit  <-  lmFit(exp.mat1, design)
+	fit2 <- treat(fit,lfc=0.1)
+	fit2 <- eBayes(fit2) 
+	topGene1 <- topTreat(fit2,coef=2,p.value=.001, n=10000)
+	diff.gene = topGene1$ID 
+	x = sum(diff.gene %in% diff.hf.gene)
+	k = length(diff.gene)
+	p.val = dhyper(x, m , n, k)
+	out[gene,] = c(x, k, p.val)
+	print(c(gene, geneName))
 
 }
+out = data.table(out)
+out$gene = geneNames
+out = out[order(V3)]
+
  #### pca analysis
 source("~/project/gtps/gtps/src/fisher.score.R")
 library(FactoMineR)
@@ -195,6 +203,20 @@ expression.join = rbind(expression.diff.hf, t(gseConv.exp[ ,
 # "donor", "hf") 
 	# paste0("donor", colnames(exp.donor.trt)), 
 	# paste0("hf", colnames(exp.hf.trt)) )
+exp.mat2 = data.table(exp.mat1 )
+exp.mat2$ctl.med=apply(exp.mat2[,ctlid,with=F], 1, median)
+for (cas in caseid) 
+{
+	eval(parse(text=paste0("exp.mat2[,",cas,".del:=",cas," - ctl.med]") ))
+
+}
+exp.df = exp.mat2 
+exp.df$sel = 0
+# exp.df[rownames(expression.match) %in% topGene1$ID, sel:=1]
+exp.df[, sel:=1]
+
+exp.mat3 = t(as.matrix(exp.mat2))
+expression.join = rbind(expression.diff.hf, exp.mat3) 
 ind.sup = (nrow(expression.diff.hf) + 1): nrow(expression.join)
 pca.gene <- PCA(expression.join, scale.unit=T, ind.sup=ind.sup , col.w=gene.weight, ncp=ncol(expression.diff.hf), graph=F) 
 gene.proj.df <- pca.gene$ind.sup$coord
