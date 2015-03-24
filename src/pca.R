@@ -182,15 +182,15 @@ expression.merge$tdi <- apply(expression.merge[,eigen.gene, with=F], 1 , functio
 
 aa <-  cor.test(expression.merge$gpdi, expression.merge$tdi, method="spearman")
 p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(gpdi)))
-p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+p <- p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y="Global phenotypic deviation index (Rank) ", x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
-ggsave(paste0( "tdi_weighted_imputed_",curr.name, "pdi.pdf"))
+ggsave(paste0( "tdi_weighted_imputed_",curr.name, "pdi.pdf"), p)
 
 aa <-  cor.test(expression.merge$gpdi, expression.merge$tdi)
-p <- ggplot(data=expression.merge, aes(x=tdi), y=gpdi))
-p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
+p <- ggplot(data=expression.merge, aes(x=tdi, y=gpdi))
+p <- p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y="Global phenotypic deviation index ", x = "Transcriptomic Deviation index ",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
-ggsave(paste0( "tdi_weighted_imputed_",curr.name, ".value.pdi.pdf"))
+ggsave(paste0( "tdi_weighted_imputed_",curr.name, ".value.pdi.pdf"), p)
 
 
 
@@ -360,4 +360,48 @@ p <- ggplot(data=exp.snp.merge, aes(x=rank(gtdi), y=rank(gpdi)))
 p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(x="Genotypic-transcriptomic deviation index (Rank) ", y = "Global phenotype Deviation index (Rank)",   title=paste0(curr.name , "\n Pearson correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
 ggsave(paste0( "gtdi_weighted_imputed_",curr.name, "pdi.pdf"))
+
+######################################################
+### limiting to ischemic 
+############################################
+
+setkey(physio.imputed, sample_name)
+physio.imputed.sub <- physio.imputed[as.character(sample.name.pedtrait)]
+pedtrait.merge <- merge(x=pedtrait, y=physio.imputed.sub, by = "sample_name", sort = F)
+ishemic.inx <- which(pedtrait.merge$etiology %in% c("donor", "Ischemic"))
+pedtrait.ishemic <- pedtrait.merge[ishemic.inx]
+expression <- pedtrait.ishemic[, grep(x=colnames(pedtrait), pattern="^X"), with=F]
+expression.z <- scale(expression, scale=apply(expression, 2, sd), center=T)
+rownames(expression.z)  = pedtrait.ishemic$sample_name
+# analysis with limma
+library(limma)
+exp.mat  <- t(as.matrix(expression))
+design <- cbind(grp1=1, disease=pedtrait.ishemic$disease) 
+fit  <-  lmFit(exp.mat, design)
+# Fold-change thresholding
+fit2 <- treat(fit,lfc=0.1)
+fit2 <- eBayes(fit2) 
+topGene <- topTreat(fit2,coef=2,2000)
+expression.diff.hf  <-  expression.z[, rownames(topGene)]
+gene.weight <- apply(expression.diff.hf ,  2,function(tt) fisher.score(tt, pedtrait.ishemic$disease) )
+pca.gene <- PCA(expression.diff.hf, col.w=gene.weight, ncp=ncol(expression.diff.hf), graph=F)
+gene.proj.df <- as.data.table(pca.gene$ind$coord)
+eigen.gene <- colnames(pca.gene$ind$coord)
+gene.proj.df$sample_name  <-  rownames(pca.gene$ind$coord)
+
+setkey(pedtrait.ishemic, sample_name)
+expression.merge <- merge(x=pedtrait.ishemic, y=gene.proj.df, by = "sample_name", sort = F)
+donor.eigen.gene <- colMeans( expression.merge[disease.p==1, eigen.gene, with=F])
+expression.merge$tdi <- apply(expression.merge[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
+
+#####tdi 
+expression.merge.copy <- copy(expression.merge)
+expression.merge  <- expression.merge.copy[, c(params, "tdi", "disease", "sample_name", eigen.gene, "etiology", "disease.p"), with=F]
+donor.eigen.physio <- colMeans( physio.proj.df[disease.p==1, eigen.physio, with=F])
+physio.proj.df$gpdi <- apply(physio.proj.df[,eigen.physio, with=F], 1 , function(tt) sum((tt - donor.eigen.physio)^2))
+setkey(physio.proj.df, sample_name)
+setkey(snp.proj.df, sample_name)
+expression.merge$gpdi <- (physio.proj.df[expression.merge$sample_name])$gpdi
+expression.merge$gdi <- snp.proj.df[expression.merge$sample_name]$gdi
+
 

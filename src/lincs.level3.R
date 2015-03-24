@@ -162,13 +162,26 @@ topGene <- topTreat(fit2,coef=2,2000)
 diff.hf.gene = topGene$ID
 m = length(diff.hf.gene)
 n = nrow(exp.mat) - m
+
+ #### pca analysis
+	source("~/project/gtps/gtps/src/fisher.score.R")
+	library(FactoMineR)
+	expression.diff.hf = t(expression.match)
+	gene.weight <- apply(expression.diff.hf,  2,function(tt) fisher.score(tt, expression.annot$disease) )
+# see the google group discussion for more information https://groups.google.com/forum/#!topic/factominer-users/N8xzRCxCfQM
+
+
+
 ##### controls
 geneNames = unique(tab.skl[pert_type =="trt_sh"]$pert_desc)
 
 	ctlid = tab1.skl[pert_type == "ctl_untrt"]$distil_id
 out = matrix(0, nrow=length(geneNames), ncol=3)
+aadt = list()
+bbdt = list()
+max.change = list()
+max.del.change = list()
 for (gene in seq(length(geneNames))) {
-
 	geneName = geneNames[gene]
 	caseid = tab1.skl[pert_desc == geneName ]$distil_id
 	exp.mat1  <- gseConv.exp[, c(ctlid, caseid)]
@@ -184,55 +197,269 @@ for (gene in seq(length(geneNames))) {
 	out[gene,] = c(x, k, p.val)
 	print(c(gene, geneName))
 
-}
-out = data.table(out)
-out$gene = geneNames
-out = out[order(V3)]
+	# out = data.table(out)
+	# out$gene = geneNames
+	# out = out[order(V3)]
 
- #### pca analysis
-source("~/project/gtps/gtps/src/fisher.score.R")
-library(FactoMineR)
-expression.diff.hf = t(expression.match)
-gene.weight <- apply(expression.diff.hf,  2,function(tt) fisher.score(tt, expression.annot$disease) )
-# see the google group discussion for more information https://groups.google.com/forum/#!topic/factominer-users/N8xzRCxCfQM
-expression.join = rbind(expression.diff.hf, t(gseConv.exp[ ,
-	list(donor, donor.trt, donor.trt1, donor.trt2, 
-		hf, hf.trt, hf.trt1, hf.trt2, del_rep1, del_rep2, del)]))
 
 # rownames(expression.join) = c(rownames(expression.diff.hf),
 # "donor", "hf") 
 	# paste0("donor", colnames(exp.donor.trt)), 
 	# paste0("hf", colnames(exp.hf.trt)) )
-exp.mat2 = data.table(exp.mat1 )
-exp.mat2$ctl.med=apply(exp.mat2[,ctlid,with=F], 1, median)
-for (cas in caseid) 
-{
-	eval(parse(text=paste0("exp.mat2[,",cas,".del:=",cas," - ctl.med]") ))
+	exp.mat2 = data.table(exp.mat1 )
+	exp.mat2$ctl.med=apply(exp.mat2[,ctlid,with=F], 1, median)
+	for (cas in caseid) 
+	{
+		eval(parse(text=paste0("exp.mat2[,",cas,".del:=",cas," - ctl.med]") ))
+
+	}
+	exp.df = exp.mat2 
+	exp.df$sel = 0
+# exp.df[rownames(expression.match) %in% topGene1$ID, sel:=1]
+	exp.df[as.numeric(rownames(topGene1)), sel:=1]
+	exp.df$del.med = apply(exp.df[,paste0(caseid,".del"),with=F],1,median)
+	exp.df$donor.med = apply(expression.match[,expression.annot$disease.p==1],1 ,median)
+	exp.df$hf.med = apply(expression.match[,expression.annot$disease.p==2],1 ,median)
+	exp.df$max = apply(expression.match,1,max)
+	exp.df$min = apply(expression.match,1,min)
+	exp.df[,del:=ifelse(sel>0, del.med,0 )]
+	exp.df[, `:=`(
+		donor.sel_.01=donor.med + .01 *del, 
+		donor.sel_.1=donor.med + .1 * del, 
+		donor.sel_.5=donor.med + .5 * del, 
+		donor.sel_1=donor.med + 1 * del, 
+		donor.sel_2=donor.med + 2 * del 
+		)]
+
+	exp.df[, `:=`(
+		hf.sel_.01=hf.med + .01 *del, 
+		hf.sel_.1=hf.med + .1 *del, 
+		hf.sel_.5=hf.med + .5 *del, 
+		hf.sel_1=hf.med + 1 * del, 
+		hf.sel_2=hf.med + 2 * del 
+		)]
+
+
+	exp.df[, `:=`(
+		donor.thr_.01=
+		ifelse( donor.sel_.01 > max, max, 
+			ifelse( donor.sel_.01 < min, min, donor.sel_.01)), 
+		donor.thr_.1=
+		ifelse( donor.sel_.1 > max, max, 
+			ifelse( donor.sel_.1 < min, min, donor.sel_.1)), 
+		donor.thr_.5=
+		ifelse( donor.sel_.5 > max, max, 
+			ifelse( donor.sel_.5 < min, min, donor.sel_.5)), 
+		donor.thr_1=
+		ifelse( donor.sel_1 > max, max, 
+			ifelse( donor.sel_1 < min, min, donor.sel_1)), 
+		donor.thr_2=
+		ifelse( donor.sel_2 > max, max, 
+			ifelse( donor.sel_2 < min, min, donor.sel_2))
+		)]
+	exp.df[, `:=`(
+		hf.thr_.01=
+		ifelse( hf.sel_.01 > max, max, 
+			ifelse( hf.sel_.01 < min, min, hf.sel_.01)), 
+		hf.thr_.1=
+		ifelse( hf.sel_.1 > max, max, 
+			ifelse( hf.sel_.1 < min, min, hf.sel_.1)), 
+		hf.thr_.5=
+		ifelse( hf.sel_.5 > max, max, 
+			ifelse( hf.sel_.5 < min, min, hf.sel_.5)), 
+		hf.thr_1=
+		ifelse( hf.sel_1 > max, max, 
+			ifelse( hf.sel_1 < min, min, hf.sel_1)), 
+		hf.thr_2=
+		ifelse( hf.sel_2 > max, max, 
+			ifelse( hf.sel_2 < min, min, hf.sel_2))
+		)]
+
+	exp.df[, `:=`(
+		hf_.01=hf.med + .01 * del.med, 
+		hf_.1=hf.med + .1 * del.med, 
+		hf_.5=hf.med + .5 * del.med, 
+		hf_1=hf.med + 1 * del.med, 
+		hf_2=hf.med + 2 * del.med 
+		)]
+
+	exp.df[, `:=`(
+		donor_.01=donor.med + .01 * del.med, 
+		donor_.1=donor.med + .1 * del.med, 
+		donor_.5=donor.med + .5 * del.med, 
+		donor_1=donor.med + 1 * del.med, 
+		donor_2=donor.med + 2 *del.med 
+		)]
+
+
+	exp.df[, `:=`(
+		donor.thr.val_.01=
+		ifelse( donor_.01 > max, max, 
+			ifelse( donor_.01 < min, min, donor_.01)), 
+		donor.thr.val_.1=
+		ifelse( donor_.1 > max, max, 
+			ifelse( donor_.1 < min, min, donor_.1)), 
+		donor.thr.val_.5=
+		ifelse( donor_.5 > max, max, 
+			ifelse( donor_.5 < min, min, donor_.5)), 
+		donor.thr.val_1=
+		ifelse( donor_1 > max, max, 
+			ifelse( donor_1 < min, min, donor_1)), 
+		donor.thr.val_2=
+		ifelse( donor_2 > max, max, 
+			ifelse( donor_2 < min, min, donor_2))
+		)]
+
+	exp.df[, `:=`(
+		hf.thr.val_.01=
+		ifelse( hf_.01 > max, max, 
+			ifelse( hf_.01 < min, min, hf_.01)), 
+		hf.thr.val_.1=
+		ifelse( hf_.1 > max, max, 
+			ifelse( hf_.1 < min, min, hf_.1)), 
+		hf.thr.val_.5=
+		ifelse( hf_.5 > max, max, 
+			ifelse( hf_.5 < min, min, hf_.5)), 
+		hf.thr.val_1=
+		ifelse( hf_1 > max, max, 
+			ifelse( hf_1 < min, min, hf_1)), 
+		hf.thr.val_2=
+		ifelse( hf_2 > max, max, 
+			ifelse( hf_2 < min, min, hf_2))
+		)]
+
+	exp.mat3 = t(as.matrix (exp.df[, grep( colnames(exp.df), pattern="donor|hf"), with=F]))
+
+
+
+# exp.mat3 = t(as.matrix(exp.mat2))
+# exp.mat3 = rbind(exp.mat3,del=exp.df$del)
+	expression.join = rbind(expression.diff.hf, exp.mat3) 
+	ind.sup = (nrow(expression.diff.hf) + 1): nrow(expression.join)
+	pca.gene <- PCA(expression.join, scale.unit=T, ind.sup=ind.sup , col.w=gene.weight, ncp=ncol(expression.diff.hf), graph=F)
+# pca.gene1 = prinp.comp(expression.join) 
+	gene.proj.df <- pca.gene$ind.sup$coord
+	eigen.gene <- colnames(pca.gene$ind.sup$coord)
+
+	magnet.gene.df = as.data.table(pca.gene$ind$coord)
+	donor.eigen.gene <- colMeans( magnet.gene.df[expression.annot$disease.p==1, eigen.gene, with=F])
+	hf.eigen.gene <- colMeans( magnet.gene.df[expression.annot$disease.p==2, eigen.gene, with=F])
+	expression.annot$tdi = apply(magnet.gene.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
+	expression.annot$hftdi = apply(magnet.gene.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - hf.eigen.gene)^2)) 
+	tdi.donor <- apply(gene.proj.df[,eigen.gene], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
+	tdi.hf <- apply(gene.proj.df[,eigen.gene], 1 , function(tt) sum((tt - hf.eigen.gene)^2))
+	st =  seq(3,42, 5)
+	he = rep(st,each=4) + 0:3 
+	tdi.donor.diff = tdi.donor[he] - tdi.donor[ he + 1 ]
+	tdi.hf.diff = tdi.hf[he] - tdi.hf[ he + 1 ]
+    donor.diff =c(
+    	 tdi.donor[1 ] - tdi.donor[c(3:7, 13:17, 28:37)],
+    	 tdi.donor[2 ] - tdi.donor[c(8:12, 18:27, 38:42)])
+    hf.diff =c(
+    	 tdi.hf[1 ] - tdi.hf[c(3:7, 13:17, 28:37)],
+    	 tdi.hf[2 ] - tdi.hf[c(8:12, 18:27, 38:42)])
+
+	max.change[[geneName]] = max(c(donor.diff, hf.diff))
+	max.del.change[[geneName]] = max(c(tdi.hf.diff, tdi.donor.diff))
+	aa = data.table(cond=names(tdi.donor), tdi.donor, tdi.hf)
+	aadt[[geneName]] = aa
+	bb = data.table(cond=names(tdi.donor.diff), tdi.donor.diff, tdi.hf.diff)
+	bbdt[[geneName]] = bb
+	print(c(gene, geneName))
+	if(gene %in% c(1,10,50, 100, 200, 300, 400, 500))
+	save(file="intermediate.RData", max.change, max.del.change, aadt, bbdt)
 
 }
-exp.df = exp.mat2 
-exp.df$sel = 0
-# exp.df[rownames(expression.match) %in% topGene1$ID, sel:=1]
-exp.df[, sel:=1]
-
-exp.mat3 = t(as.matrix(exp.mat2))
-expression.join = rbind(expression.diff.hf, exp.mat3) 
-ind.sup = (nrow(expression.diff.hf) + 1): nrow(expression.join)
-pca.gene <- PCA(expression.join, scale.unit=T, ind.sup=ind.sup , col.w=gene.weight, ncp=ncol(expression.diff.hf), graph=F) 
-gene.proj.df <- pca.gene$ind.sup$coord
-eigen.gene <- colnames(pca.gene$ind.sup$coord)
-
-magnet.gene.df = as.data.table(pca.gene$ind$coord)
-donor.eigen.gene <- colMeans( magnet.gene.df[expression.annot$disease.p==1, eigen.gene, with=F])
-hf.eigen.gene <- colMeans( magnet.gene.df[expression.annot$disease.p==2, eigen.gene, with=F])
-expression.annot$tdi = apply(magnet.gene.df[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
-tdi.donor <- apply(gene.proj.df[,eigen.gene], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
-tdi.hf <- apply(gene.proj.df[,eigen.gene], 1 , function(tt) sum((tt - hf.eigen.gene)^2))
-
 # tdi.donor = tdi[1:ncol(exp.donor.trt)]
 # tdi.hf =  tdi[-(1:ncol(exp.donor.trt))]
-gene.pca = data.table(t(gene.proj.df) )
-gene.pca$max = apply(magnet.gene.df, 2, max) 
-gene.pca$min = apply(magnet.gene.df, 2, min) 
+# gene.pca = data.table(t(gene.proj.df) )
+# gene.pca$max = apply(magnet.gene.df, 2, max) 
+# gene.pca$min = apply(magnet.gene.df, 2, min)
+
+tab.erg = tab1[(pert_desc=="ERG")&(pert_type=="trt_sh")]
+write.table(file="erg.cid", tab.erg$myid, quote=F, row.names=F, col.names=F)
+tab.cntl = tab1[pert_type=="ctl_untrt"]
+write.table(file="control.cid", tab.cntl$myid, quote=F, row.names=F, col.names=F)
+###finding correlation
+
+
+erg.mat = fread("lincs.mat.ERG") 
+tab.erg.96 = tab.erg[pert_time==96]
+erg.mat.96=erg.mat[,tab.erg$pert_time==96,with=F]
+tissues = unique(tab.erg.96$cell_id)
+erg.med = matrix(0,nrow=nrow(erg.mat.96), ncol=length(tissues)) 
+colnames(erg.med) = tissues
+for (inx in seq(length(tissues))) {
+tissue = tissues[inx]
+erg.med[,inx] = apply(erg.mat.96[,tab.erg.96$cell_id == tissue, with=F], 1, median)
+}
+
+ctl.mat = fread("lincs.mat.control") 
+tissues1 = unique(tab.cntl$cell_id)
+ctl.med = matrix(0,nrow=nrow(ctl.mat), ncol=length(tissues1)) 
+colnames(ctl.med) = tissues1
+for (inx in seq(length(tissues1))) {
+	tissue = tissues1[inx]
+	ctl.med[,inx] = apply(ctl.mat[,tab.cntl$cell_id == tissue, with=F], 1, median)
+}
+control.median.exp =ctl.med
+
+save(file="control.median.exp.RData", control.median.exp)
+
+erg.cor = cor(erg.med)
+erg.cor = erg.cor[lower.tri(erg.cor)]
+
+ctl.med.match = ctl.med[,colnames(erg.med)]
+ctl.cor = cor(ctl.med.match)
+ctl.cor = ctl.cor[lower.tri(ctl.cor)]
+
+del.cor = cor(ctl.med.match - erg.med)
+del.cor = del.cor[lower.tri(del.cor)]
+
+dt.avi = data.table(erg.cor, ctl.cor, del.cor)
+
+p = ggplot(data=dt.avi, aes(x=ctl.cor, y=erg.cor)) + geom_point()
+p = ggplot(data=dt.avi, aes(x=ctl.cor, y=del.cor)) + geom_point()
+
+
+### KRAS
+tab.kras = tab1[(pert_desc=="KRAS")&(pert_type=="trt_sh")]
+write.table(file="kras.cid", tab.kras$myid, quote=F, row.names=F, col.names=F)
+###finding correlation
+
+
+kras.mat = fread("lincs.mat.kras") 
+tab.kras.96 = tab.kras[pert_time==96]
+kras.mat.96=kras.mat[,tab.kras$pert_time==96,with=F]
+tissues = unique(tab.kras.96$cell_id)
+kras.med = matrix(0,nrow=nrow(kras.mat.96), ncol=length(tissues)) 
+colnames(kras.med) = tissues
+for (inx in seq(length(tissues))) {
+tissue = tissues[inx]
+kras.med[,inx] = apply(kras.mat.96[,tab.kras.96$cell_id == tissue, with=F], 1, median)
+}
+
+kras.cor = cor(kras.med)
+kras.cor = kras.cor[lower.tri(kras.cor)]
+
+ctl.med.match = ctl.med[,colnames(kras.med)]
+ctl.cor = cor(ctl.med.match)
+ctl.cor = ctl.cor[lower.tri(ctl.cor)]
+
+del.cor = cor(ctl.med.match - kras.med)
+del.cor = del.cor[lower.tri(del.cor)]
+
+dt.avi = data.table(kras.cor, ctl.cor, del.cor)
+
+p = ggplot(data=dt.avi, aes(x=ctl.cor, y=kras.cor)) + geom_point()
+ggsave("kras.cntl.pdf",p)
+p = ggplot(data=dt.avi, aes(x=ctl.cor, y=del.cor)) + geom_point()
+ggsave("kras.del.pdf",p)
+
+
+hf.donor.d = 1924
+
+p = ggplot(data=expression.annot, aes(x=tdi, y=hftdi, color=etiology)) + geom_point(alpha=.2)+ 
+geom_segment(aes(y = 4, x = hf.donor.d, yend = 923, xend = 1390), arrow = arrow())
 
 
