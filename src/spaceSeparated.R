@@ -23,6 +23,8 @@ physio.imputed$etiology =   physio.subset$etiology
 
 # expression.merge <- merge(x=physio.imputed, y=gene.proj.df, by = "sample_name", sort = F, suffixes= c("", ".gene"))
 setkey(physio.imputed, sample_name)
+expression = expression[,colnames(expression) %in% physio.subset$sample_name]
+expression.m <- sweep(expression, 1, rowMeans(expression), FUN="-")
 physio.pedtrait = physio.imputed[colnames(expression)]
 # physio.pedtrait$etiology = physio.reduced[physio.pedtrait$sample_name]$etiology
 
@@ -30,13 +32,18 @@ physio.pedtrait = physio.imputed[colnames(expression)]
 #### GPDI
 
 physio.imputed1 <- physio.imputed[!duplicated(sample_name)]
+physio.imputed1 = physio.imputed1
 physio.imputed.params <-  as.matrix( physio.imputed1[,list( lvedd.p, lvesd.p, lvef.p,
 				   mitral_regurgitation.p, tricuspid_regurgitation.p, cardiac_index.p, creatinine_level.p)])
 
 rownames(physio.imputed.params)  <-  physio.imputed1$sample_name
 source("~/project/gtps/gtps/src/fisher.score.R")
 physio.weight <- apply(physio.imputed.params,  2,function(tt) fisher.score(tt, physio.imputed1$disease.p) )
-pca.physio <- PCA(physio.imputed.params, col.w=physio.weight, ncp=ncol(physio.imputed.params), graph=F)
+gene.weight <- apply(expression ,  1,function(tt) fisher.score(tt, physio.imputed1[colnames(expression)]$disease.p) )
+	pca.gene <- PCA(expression.curr.sel, scale.unit=F, 
+pca.physio <- PCA(physio.imputed.params, 
+	# col.w=physio.weight, 
+	ncp=ncol(physio.imputed.params), graph=F)
 physio.proj.df <- as.data.table(pca.physio$ind$coord)
 eigen.physio <- colnames(pca.physio$ind$coord)
 eigen.physio <-  paste0(eigen.physio, ".p")
@@ -53,34 +60,41 @@ physio.proj.df$gpdi <- apply(physio.proj.df[,eigen.physio, with=F], 1 , function
 ########## select genes based on those which are significantly correlated to phenotype
 params = c("lvedd.p", "lvesd.p", "lvef.p", "mitral_regurgitation.p", "tricuspid_regurgitation.p", "cardiac_index.p", "creatinine_level.p")
 gene.sel = NULL
+
+physio.curr = physio.pedtrait[disease.p==2]
+expression.curr = expression[,physio.curr$sample_name]
 for (param in params) {
-	trait = unlist(physio.pedtrait[,colnames(physio.pedtrait) == param, with =F])
-aa = apply(expression,1, function(tt) (cor.test(tt, trait,method="spearman"))$p.value)
-gene.sel[[param]] = as.character(names(aa)[ aa<1E-6])
+	trait = unlist(physio.curr[,colnames(physio.curr) == param, with =F])
+aa = apply(expression.curr,1, function(tt) (cor.test(tt, trait,method="spearman"))$p.value)
+gene.sel[[param]] = as.character(names(aa)[ aa<1E-5])
 }
 
 gene.sel = unique(unlist(gene.sel))
 
-expression.sel = t(expression[gene.sel,])
-	pca.gene <- PCA(expression.sel, scale.unit=T, 
-		ncp=ncol(expression.sel), graph=F)
-# pca.gene1 = prinp.comp(expression.join) 
+expression.curr.sel = t(expression.curr[gene.sel,])
+pca.gene <- PCA(expression.curr.sel,
+		# ncp=ncol(expression.curr.sel),
+		ncp=10,
+		col.w=gene.weight[colnames(expression.curr.sel)],
+		 graph=F)
+# pca.gene1 = prinp.comp(expression.curr.join) 
 gene.proj.df <- as.data.table(pca.gene$ind$coord)
 eigen.gene <- colnames(pca.gene$ind$coord)
 gene.proj.df$sample_name  <-  rownames(pca.gene$ind$coord)
 setkey(gene.proj.df, sample_name)
-expression.merge <- merge(x=physio.proj.df, y=gene.proj.df, by = "sample_name", sort = F, suffixes = c("", ".gene") )
-donor.eigen.gene <- colMeans( expression.merge[disease.p==1, eigen.gene, with=F])
+expression.curr.merge <- merge(x=physio.proj.df, y=gene.proj.df, by = "sample_name", sort = F, suffixes = c("", ".gene") )
+expression.curr.merge <- merge(x=expression.curr.merge, y=physio.pedtrait, by = "sample_name", sort = F, suffixes = c("", ".ped") )
+donor.eigen.gene <- colMeans( expression.curr.merge[disease.p==2, eigen.gene, with=F])
 eigen.gene.m <- paste0(eigen.gene,".gene")
-expression.merge$tdi <- apply(expression.merge[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
-expression.merge$gpdi <- physio.proj.df[expression.merge$sample_name]$gpdi
-expression.merge$etiology <- physio.imputed[as.character(expression.merge$sample_name)]$etiology
+expression.curr.merge$tdi <- apply(expression.curr.merge[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2))
+expression.curr.merge$gpdi <- physio.proj.df[expression.curr.merge$sample_name]$gpdi
+expression.curr.merge$etiology <- physio.imputed[as.character(expression.curr.merge$sample_name)]$etiology
 
 curr.name <- "GPDI"
 curr.param <- "gpdi"
 
-aa <-  cor.test(expression.merge$gpdi, expression.merge$tdi, method="spearman")
-p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(gpdi)))
+aa <-  cor.test(expression.curr.merge$gpdi, expression.curr.merge$tdi, method="spearman")
+p <- ggplot(data=expression.curr.merge, aes(x=rank(tdi), y=rank(gpdi)))
 p <- p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y="Global phenotypic deviation index (Rank) ", x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
 
