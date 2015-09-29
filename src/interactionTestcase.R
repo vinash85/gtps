@@ -80,7 +80,7 @@ system.time(
 		if(gene1 !=gene2){
 			aa2 = tcga.rna.bin[gene2,]
 			inx = (!is.na(aa2)) & (!is.na(aa1))
-			if(sum(inx) < num.genes){
+			if(sum(inx) < num.samples){
 				aa1.q = aa1[inx]
 				aa2.q = aa2[inx]
 				tcga.sur.q = tcga.sur[inx] 
@@ -142,7 +142,6 @@ system.time(
 tt = matrix(NA, 2,2); tt1 = rep(0,2)
 xx = interactionTestks_gene(tt, tt1);
 
-xx = 
 ########
 
 
@@ -153,30 +152,78 @@ sl = unlist(SDRdt[1,1:2,with=F])
 
 
 
-/cbcbhomes/vinash85/project/tcga/data/oncogenic_drivers.csv
-##### run survival analysis
-
-##solving equantion like kids
+################### interacting partner of SLs########
 #
-#
-library(rSymPy)
-sympy("var('ra1, ra2, rb1, rb2, r21, d12, d22, d,n11, n12, n21, n22')") # declare vars
-sympy("solve([Eq(ra2+rb1-ra2*rb1, d12/n12), Eq(ra2+rb2-ra2*rb2, d22/n22), Eq(ra1+rb2-ra1*rb2, r21), Eq((n11 + n12)*rb1+ (n22 + n21) *rb2,d), Eq((n11 + n21)*ra1+ (n22 + n12) *ra2,d)],[ra1,ra2,rb1, rb2, r21])",retclass="Sym")
+drivers = fread("/cbcbhomes/vinash85/project/tcga/data/oncogenic_drivers.csv")
 
 
-library(rSymPy)
-sympy("var('ra1, ra2, rb1, rb2, r21, d12, d22, d,n11, n12, n21, n22')") # declare vars
-sympy("solve([Eq(ra2+rb1-ra2*rb1, d12/n12), Eq(ra2+rb2-ra2*rb2, d22/n22), Eq((n11 + n12)*rb1+ (n22 + n21) *rb2,d), Eq((n11 + n21)*ra1+ (n22 + n12) *ra2,d)],[ra1,ra2,rb1, rb2, r21])",retclass="Sym")
 
-solve x+y-x y = l
-x+z-x z = k
-a y+b z = d
-g w+f x = d
-w+z-w z-u = 0  for  x, y, z, u, w
-Solve{x + y - x*y == l,  x + z - x*z == k, a*y + b*z == d, g*w + f*x == d, w+z-w*z - u ==0 ,x,y,z, u, w}
+genes = drivers[gene %in% rownames(tcga.rna.bin)]$gene
+library(foreach)
+library(doMC)
+registerDoMC(cores=32)
+num.genes = nrow(tcga.rna.bin)
+interaction.result = foreach (gene = genes, .inorder=T, .combine="rbind") %dopar% {
+    gene1 = which( rownames(tcga.rna.bin) %in% gene) 
+    print(gene)
+	aa1 = tcga.rna.bin[gene1,]
+	interaction.info = matrix(NA, ncol=6, nrow=num.genes)
+	for (gene2 in seq(num.genes)) {
+		# print (gene2)
+		aa2 = tcga.rna.bin[gene2,]
+		inx = (!is.na(aa2)) & (!is.na(aa1))
+		if(sum(inx) < num.samples){
+			aa1.q = aa1[inx]
+			aa2.q = aa2[inx]
+			tcga.sur.q = tcga.sur[inx] 
+			quadrant = 2*aa2.q + aa1.q + 1
+			quadrant = quadrant[tcga.sur.q$V1] 
+			n.temp = table(quadrant)
+			n = n.temp[c("1", "2", "3", "4")]
+			if(all(!is.na(n)))
+			interaction.info[gene2,]= unlist(interactionTest_ks(n=n,events=tcga.sur.q$V3,quadrant=quadrant)) 
 
+		}else{
+			quadrant = 2*aa2 + aa1 + 1
+			quadrant = quadrant[tcga.sur$V1] 
+			n.temp = table(quadrant)
+			n = n.temp[c("1", "2", "3", "4")]
+			if(all(!is.na(n)))
+			interaction.info[gene2,]= unlist(interactionTest_ks(n=n,events=tcga.sur$V3,quadrant=quadrant))
 
-x = (a l+b k-d)/(a+b-d), y = (-b k+b l+d (-l)+d)/(a (-l)+a-b k+b), z = (-a k+a l+d k-d)/(a l-a+b k-b), u = (a d k-a d-a f k l+a f l-a g k+a g l+b d k-b d-b f k^2+b f k+d^2 (-k)+d^2+d f k-d f+d g k-d g)/(g (a l-a+b k-b)), w = (a d-a f l+b d-b f k-d^2+d f)/(g (a+b-d))
+		}
+	}
+	return(interaction.info)
+
+}
+
+setkey(drivers, gene)
+setnames(drivers, 4, "tumor.suppressor")
+drivers.inter=data.table(interaction.result)
+setnames(drivers.inter, 1:6, 
+	c("stat.g", "stat.l", "stat.t", "p.g", "p.l", "p.t"))
+drivers.inter$gene1=rep(genes,each=num.genes)
+drivers.inter$gene2=rep(rownames(tcga.rna.bin), length(genes))
+drivers.inter= drivers.inter[!(is.na(p.t))]
+require(fdrtool)
+drivers.inter$qval = fdrtool(drivers.inter$p.t, statistic = "pvalue", plot = F)$qval
+drivers.inter$oncogene = drivers[drivers.inter$gene1]$oncogene 
+drivers.inter$tumor.suppressor = drivers[drivers.inter$gene1]$tumor.suppressor 
+
+drivers.g = drivers.inter[order(stat.l,decreasing=T)[1:1000]]
+drivers.g.onco = drivers.g[oncogene > tumor.suppressor]
+write.table(file="drivers.l", unique(drivers.g$gene2), quote=F, row.names=F, col.names=F)
+drivers.g.tumor.s = drivers.g[oncogene < tumor.suppressor]
+write.table(file="drivers.g.tumor.s", drivers.g.tumor.s$gene2, quote=F, row.names=F, col.names=F)
+write.table(file="drivers.less.txt", drivers.inter[], quote=F, row.names=F, col.names=F)
+
+write.table(file="background.pcg", rownames(tcga.rna.bin), quote=F, row.names=F, col.names=F)
+
+drivers.t = drivers.inter[order(stat.t,decreasing=F)[1:1000]]
+
+write.table(file="drivers.greater.txt", drivers.inter[order(stat.g,decreasing=T)[1:1000]], quote=F, row.names=F, col.names=F)
+write.table(file="drivers.less.txt", drivers.inter[order(stat.l,decreasing=T)[1:1000]], quote=F, row.names=F, col.names=F)
+write.table(file="drivers.match.txt", drivers.inter[order(stat.t,decreasing=F)[1:1000]], quote=F, row.names=F, col.names=F)
 
 
 
