@@ -94,7 +94,7 @@ physio.imputed.pedtrait <- merge(x=pedtrait[,c("sample_name", gene.names),with=F
 physio.imputed.pedtrait$etiology  <- (physio.subset[physio.imputed.pedtrait$sample_name, ])$etiology
 #summary((physio.imputed.pedtrait[etiology=="donor"])$tricuspid_regurgitation.p)
 
-soruce("physioProcess.R")
+source("~/project/gtps/gtps/src/physioProcess.R")
 
 if(F){
 library(doMC)

@@ -47,8 +47,22 @@ ggsave("tdi_lvesd.pdf")
 
 source("~/project/gtps/gtps/src/fisher.score.R")
 library(limma)
-topGene <- topTreat(fit2,coef=2,2000)
+if(F){
+
+	topGene <- topGenes(fit2,coef=2,2000)
+topGene <- topTreat(fit2,coef=2)
+topGene = topGene[1:2000,]
 expression.diff.hf  <-  expression.z[, rownames(topGene)]
+}
+library(parallel)
+
+diff.genes.p <-unlist(mclapply(colnames(expression.z), function(tt1) {
+	tt =expression.z[,tt1]
+	out =  wilcox.test( tt[pedtrait$disease==1 ], tt[pedtrait$disease==2], method="Spearman")
+	out$p.value 
+    }, mc.cores=64) )
+expression.diff.hf  <-  expression.z[, (diff.genes.p < 1E-5)]
+
 gene.weight <- apply(expression.diff.hf ,  2,function(tt) fisher.score(tt, pedtrait.info$disease) )
 pca.gene <- PCA(expression.diff.hf, col.w=gene.weight, ncp=ncol(expression.diff.hf), graph=F)
 gene.proj.df <- as.data.table(pca.gene$ind$coord)
@@ -76,10 +90,10 @@ setkey(pedtrait.info, sample_name)
 expression.merge <- merge(x=physio.reduced, y=gene.proj.df, by = "sample_name", sort = F)
 donor.eigen.gene <- colMeans( expression.merge[disease.p==1, eigen.gene, with=F])
 expression.merge$tdi <- apply(expression.merge[,eigen.gene, with=F], 1 , function(tt) sum((tt - donor.eigen.gene)^2)) 
-
+library(ggplot2)
 p <- ggplot(data=expression.merge, aes(x=Dim.1, y=Dim.2))
 p+geom_point(aes(col=factor(history_of_diabetes.p)))
-ggsave("pca_weighted_hf.pdf")
+ggsave("temp_pca_weighted_hf.pdf")
 
 params = c( "lvef.p","lvedd.p","lvesd.p","mitral_regurgitation.p","tricuspid_regurgitation.p","cardiac_index.p","creatinine_level.p") 
 
@@ -91,7 +105,7 @@ aa <-  cor.test(expression.merge$pdi, expression.merge$tdi, ,method="spearman")
 p <- ggplot(data=expression.merge, aes(x=rank(tdi), y=rank(pdi)))
 p+geom_point(aes(col=factor(etiology)) ) + geom_smooth(method=lm) +
 labs(y= curr.name, x = "Transcriptomic Deviation index (Rank)",   title=paste0(curr.name , "\n correlation =",  format( aa$estimate, digits=3) , " \n p =", format(aa$p.value, digits=3, scientific=T)))   
-ggsave(paste0( "tdi_weighted_",curr.name, ".pdf"))
+ggsave(paste0( "temp/tdi_weighted_",curr.name, ".pdf"))
 }
 
 
